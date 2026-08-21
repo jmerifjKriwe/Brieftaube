@@ -1,0 +1,61 @@
+# MkDocs configuration for the Brieftaube documentation site.
+# Run `just docs-dev` for a live preview or `just docs-build` for a strict build.
+
+site_name: Brieftaube
+site_description: >-
+  A self-hosted notification hub that routes messages to people through
+  user-defined channels (Signal, MQTT, and more).
+repo_url: https://github.com/jmerifjKriwe/Brieftaube
+repo_name: GitHub
+copyright: Brieftaube contributors
+
+docs_dir: docs
+# The ADR template is a copy-and-paste source for new records, not a docs page.
+exclude_docs: adr/_template.md
+
+theme:
+  name: material
+  features:
+    - navigation.top
+    - navigation.sections
+    - content.code.copy
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      linenums: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: README.md
+  - Testing: TESTING.md
+  - Collaboration: COLLABORATION.md
+  - Design: DESIGN.md
+  - Agents:
+      - API: agents/api.md
+      - Database: agents/database.md
+      - Frontend: agents/frontend.md
+  - Architecture Decision Records:
+      - "ADR 0001 — Record Architecture Decisions": adr/0001-record-architecture-decisions.md
+      - "ADR 0002 — Lean Python Monolith": adr/0002-lean-python-monolith.md
+      - "ADR 0003 — Server-Rendered HTMX": adr/0003-server-rendered-htmx.md
+  - Concepts:
+      - Requirements: concepts/requirements.md
+      - Architecture: concepts/architecture.md
+      - Data Model: concepts/data_model.md
+      - Roadmap: concepts/roadmap.md
+      - Combined Concept Feedback: concepts/combined_concept_feedback.md

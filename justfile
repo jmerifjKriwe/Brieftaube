@@ -67,6 +67,18 @@ check: lint typecheck test
     @echo "All checks passed."
 
 # ---------------------------------------------------------------------------
+# Documentation (MkDocs — config in mkdocs.yml at the repo root)
+# ---------------------------------------------------------------------------
+
+# Live-preview the docs site on http://127.0.0.1:8001 (8001 avoids the app dev server on 8000).
+docs-dev:
+    uv run mkdocs serve --dev-addr 127.0.0.1:8001
+
+# Strict docs build — warnings fail the build. Output lands in site/.
+docs-build:
+    uv run mkdocs build --strict
+
+# ---------------------------------------------------------------------------
 # Database (requires Alembic env — see docs/agents/database.md for first-time
 # setup; until then these recipes intentionally fail fast.)
 # ---------------------------------------------------------------------------
