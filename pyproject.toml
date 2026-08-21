@@ -1,6 +1,6 @@
 [project]
 name = "brieftaube"
-version = "0.1.0"
+version = "0.2.0"
 description = "Brieftaube — a self-hosted notification hub that routes messages to people through user-defined channels (Signal, MQTT, and more)."
 readme = "README.md"
 license = { file = "LICENSE" }
