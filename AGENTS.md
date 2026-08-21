@@ -105,6 +105,7 @@ src/brieftaube/        application package (app factory, i18n, config)
   locales/             UI translation catalogs (en.json, de.json)
 tests/                 unit/ | integration/ | e2e/ (conftest per level)
 docs/                  TESTING, COLLABORATION, DESIGN, agents/, adr/, concepts/
+mkdocs.yml             docs site config (just docs-dev / just docs-build)
 .github/workflows/     ci.yml (lint/type/test/e2e/secrets), release-please.yml
 justfile               task runner (mirrors CI)
 ```
