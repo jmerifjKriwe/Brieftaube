@@ -1,0 +1,7 @@
+{
+  "app.name": "Brieftaube",
+  "nav.language": "Language",
+  "index.welcome": "Welcome to Brieftaube",
+  "index.tagline": "Your messages, delivered through the right channel.",
+  "index.scaffold_note": "The UI is under construction. Service health is available at /healthz."
+}

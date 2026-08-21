@@ -1,0 +1,31 @@
+# Brieftaube runtime: app + signal-cli-rest-api sidecar.
+# See docs/concepts/architecture.md section 2 for the reasoning behind this layout.
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      BRIEFTAUBE_SIGNAL_CLI_URL: http://signal-cli:8080
+      BRIEFTAUBE_MQTT_HOST: ${BRIEFTAUBE_MQTT_HOST:-}
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      - signal-cli
+    restart: unless-stopped
+
+  # Ready-made Signal bridge (own Signal account, linked as secondary device).
+  # First-time setup: http://localhost:8080/v1/qrcodelink?device_name=brieftaube
+  signal-cli:
+    image: bbernhard/signal-cli-rest-api:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - signal-cli-config:/home/.local/share/signal-cli
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  signal-cli-config:

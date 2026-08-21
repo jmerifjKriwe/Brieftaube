@@ -1,0 +1,32 @@
+name: Release
+
+# release-please maintains a running "chore(main): release X.Y.Z" pull request.
+# Conventional Commit titles on merged PRs feed the changelog and version bump.
+# See docs/COLLABORATION.md ("Releases") for the full flow.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Future publishing steps (Docker image, etc.) hook in here, e.g.:
+  # publish:
+  #   needs: release-please
+  #   if: needs.release-please.outputs.release_created == 'true'
+  #   ...

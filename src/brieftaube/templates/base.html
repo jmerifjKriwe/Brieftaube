@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ t("app.name") }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">{{ t("app.name") }}</a>
+    <nav aria-label="{{ t('nav.language') }}" class="locale-switch">
+      {% for loc in supported_locales %}
+        <a href="/locale/{{ loc }}"
+           hreflang="{{ loc }}"
+           lang="{{ loc }}"
+           {% if loc == locale %}aria-current="true" class="active"{% endif %}>
+          {{ loc | upper }}
+        </a>
+      {% endfor %}
+    </nav>
+  </header>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

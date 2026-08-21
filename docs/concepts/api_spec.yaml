@@ -1,0 +1,879 @@
+openapi: 3.0.3
+info:
+  title: Notification Hub API
+  version: "0.1.0"
+  description: >
+    API specification based on requirements.md and data_model.md.
+    Two consumer groups: (1) external sending systems (e.g. Home Assistant) via
+    api_key auth, (2) the internal web UI via session cookie auth.
+
+servers:
+  - url: /api/v1
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Key issued per sending system (see api_source).
+    SessionAuth:
+      type: apiKey
+      in: cookie
+      name: session_id
+      description: Session cookie after successful login in the web UI.
+
+  schemas:
+    Priority:
+      type: string
+      enum: [low, normal, high, critical]
+      default: normal
+
+    NotificationIn:
+      type: object
+      required: [category, task, message]
+      properties:
+        category:
+          type: string
+          example: "ToDos"
+        task:
+          type: string
+          example: "Haustuer_Klingel"
+        priority:
+          $ref: '#/components/schemas/Priority'
+        confirmation_type:
+          type: string
+          enum: [none, read, completion]
+          default: none
+          description: >
+            "read": recipients must individually confirm that they have read it.
+            "completion": an associated task must be completed; confirmation by
+            any currently addressed recipient closes it for everyone.
+        title:
+          type: string
+        message:
+          type: string
+        image_url:
+          type: string
+          nullable: true
+        thread_key:
+          type: string
+          nullable: true
+          description: >
+            Optional. Messages with an identical thread_key replace/update the
+            previous delivery on channels that support this. Channels without support
+            send a new message unchanged instead.
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    NotificationAccepted:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [accepted]
+        category_created:
+          type: boolean
+          description: true if category/task were newly created by this call
+
+    Notification:
+      allOf:
+        - $ref: '#/components/schemas/NotificationIn'
+        - type: object
+          properties:
+            id: { type: integer }
+            source_id: { type: integer }
+            created_at: { type: string, format: date-time }
+
+    NotificationRecipientStatus:
+      type: object
+      properties:
+        user_id: { type: integer }
+        username: { type: string }
+        status: { type: string, enum: [pending, delivered, failed, cancelled] }
+        read_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        attempts:
+          type: array
+          items:
+            type: object
+            properties:
+              channel_instance_id: { type: integer }
+              channel_type: { type: string }
+              attempt_number: { type: integer }
+              status: { type: string, enum: [success, failure] }
+              error_message: { type: string, nullable: true }
+              attempted_at: { type: string, format: date-time }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        role: { type: string, enum: [admin, power_user, user] }
+        created_at: { type: string, format: date-time }
+
+    UserCreate:
+      type: object
+      required: [username, password, role]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        role: { type: string, enum: [admin, power_user, user] }
+
+    Group:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        member_ids:
+          type: array
+          items: { type: integer }
+
+    Category:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        tasks:
+          type: array
+          items: { $ref: '#/components/schemas/Task' }
+
+    Task:
+      type: object
+      properties:
+        id: { type: integer }
+        category_id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+
+    ContextVariable:
+      type: object
+      properties:
+        id: { type: integer }
+        key: { type: string }
+        scope: { type: string, enum: [global, per_user] }
+        user_ref_id: { type: integer, nullable: true }
+        value: { type: string }
+        updated_at: { type: string, format: date-time }
+        stale_after_seconds: { type: integer, nullable: true }
+        source: { type: string }
+
+    RoutingPresetStep:
+      type: object
+      required: [target_type, target_id, step_order]
+      properties:
+        id: { type: integer }
+        step_order: { type: integer }
+        target_type: { type: string, enum: [user, group, device_channel] }
+        target_id: { type: integer, description: "user.id, group.id or channel_instance.id, depending on target_type" }
+        filter_context_key: { type: string, nullable: true }
+        filter_expected_value: { type: string, nullable: true }
+        group_aggregation: { type: string, enum: [any, all, none], nullable: true }
+
+    RoutingPreset:
+      type: object
+      required: [name, combinator, steps]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        combinator: { type: string, enum: [union, fallback] }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/RoutingPresetStep' }
+
+    Subscription:
+      type: object
+      required: [subscription_type]
+      properties:
+        id: { type: integer }
+        category_id: { type: integer, nullable: true }
+        task_id: { type: integer, nullable: true }
+        is_default_fallback: { type: boolean, default: false }
+        subscription_type: { type: string, enum: [simple, preset] }
+        target_type: { type: string, enum: [user, group, device_channel], nullable: true }
+        target_id: { type: integer, nullable: true }
+        preset_id: { type: integer, nullable: true }
+        active: { type: boolean, default: true }
+        snoozed_until: { type: string, format: date-time, nullable: true }
+
+    ChannelType:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string, enum: [pushover, telegram, signal, ntfy] }
+
+    ChannelInstance:
+      type: object
+      required: [channel_type_id, label, config]
+      properties:
+        id: { type: integer }
+        user_id:
+          type: integer
+          nullable: true
+          description: "NULL for a device recipient (e.g. hallway speaker) that is not assigned to any person."
+        channel_type_id: { type: integer }
+        label:
+          type: string
+          description: "Freely chosen display name, e.g. Pushover Phone / Pushover Tablet. A user can create any number of instances of the same channel type; label distinguishes them in the UI."
+        config:
+          type: object
+          additionalProperties: true
+          description: "Type-specific: chat_id (Telegram), user_key + device (Pushover), topic (ntfy)."
+
+    UserChannelRule:
+      type: object
+      required: [mode, channel_instance_ids]
+      properties:
+        id: { type: integer }
+        category_id: { type: integer, nullable: true }
+        task_id: { type: integer, nullable: true }
+        min_priority: { $ref: '#/components/schemas/Priority' }
+        mode: { type: string, enum: [additive, replace] }
+        channel_instance_ids:
+          type: array
+          items: { type: integer }
+
+    ApiSource:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+
+    ApiSourceCreated:
+      allOf:
+        - $ref: '#/components/schemas/ApiSource'
+        - type: object
+          properties:
+            api_key:
+              type: string
+              description: Returned in plain text only once, at creation time.
+
+paths:
+
+  # ---------- External API (sending systems) ----------
+
+  /notifications:
+    post:
+      summary: Submit a new notification
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationIn' }
+      responses:
+        '202':
+          description: Accepted; processing/delivery runs asynchronously in the background.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationAccepted' }
+        '401':
+          description: Invalid or missing API key.
+
+  /confirm/{token}:
+    get:
+      summary: >
+        Confirmation via link (invoked from a channel message or a native button). No login
+        required; the token itself serves as authentication. Depending on
+        notification.confirmation_type, sets read_at or completed_at of the associated
+        notification_recipient entry. For completion, the associated
+        notification_watch is also deactivated and all still-open notification_recipient
+        rows of the same notification are set to cancelled.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: >
+            Confirmation successfully processed. Returns a simple HTML confirmation page
+            (for clicks by humans); channel adapters that resolve buttons internally can
+            call the same endpoint programmatically and only evaluate the status code.
+        '404':
+          description: Token unknown or already expired/used.
+
+  # ---------- Auth ----------
+
+  /auth/login:
+    post:
+      summary: Login, sets session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: Login successful }
+        '401': { description: Invalid credentials }
+
+  /auth/logout:
+    post:
+      summary: End session
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200': { description: Logged out }
+
+  /auth/change-password:
+    post:
+      summary: Change own password
+      security: [{ SessionAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string }
+      responses:
+        '200': { description: Password changed }
+        '401': { description: Current password wrong }
+
+  # ---------- Users & groups (admin) ----------
+
+  /users:
+    get:
+      summary: List all users
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/User' }
+    post:
+      summary: Create a new user (admin)
+      security: [{ SessionAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserCreate' }
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /users/{user_id}:
+    patch:
+      summary: Edit user (role, password reset by admin)
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [admin, power_user, user] }
+                password: { type: string }
+      responses:
+        '200': { description: Updated }
+    delete:
+      summary: Delete user
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+
+  /groups:
+    get:
+      summary: List groups
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Group' }
+    post:
+      summary: Create group
+      security: [{ SessionAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+
+  /groups/{group_id}/members:
+    put:
+      summary: Set a group's member list (full replacement)
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: group_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                member_ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200': { description: Updated }
+
+  # ---------- Categories / tasks ----------
+
+  /categories:
+    get:
+      summary: List all categories incl. tasks (for the subscription UI)
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+
+  /categories/{category_id}:
+    patch:
+      summary: Add/change a category's description text (admin)
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: category_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+      responses:
+        '200': { description: Updated }
+
+  /tasks/{task_id}:
+    patch:
+      summary: Add/change a task's description text (admin)
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+      responses:
+        '200': { description: Updated }
+
+  # ---------- Context variables ----------
+
+  /context-variables:
+    get:
+      summary: View current context variables (debug/overview)
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ContextVariable' }
+
+  /context-variables/{key}:
+    patch:
+      summary: Set the staleness configuration of a context variable (admin)
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stale_after_seconds: { type: integer }
+      responses:
+        '200': { description: Updated }
+
+  # ---------- Routing presets ----------
+
+  /routing-presets:
+    get:
+      summary: List all routing presets
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RoutingPreset' }
+    post:
+      summary: Create a new routing preset (admin/power_user)
+      security: [{ SessionAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutingPreset' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutingPreset' }
+
+  /routing-presets/{preset_id}:
+    put:
+      summary: Fully replace a routing preset incl. steps
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: preset_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutingPreset' }
+      responses:
+        '200': { description: Updated }
+    delete:
+      summary: Delete routing preset
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: preset_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+
+  # ---------- Subscriptions ----------
+
+  /subscriptions:
+    get:
+      summary: List subscriptions (own for regular users, all for admin)
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - name: category_id
+          in: query
+          schema: { type: integer }
+        - name: task_id
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Subscription' }
+    post:
+      summary: >
+        Create a new subscription. subscription_type=simple is self-service for your own
+        person/own groups; subscription_type=preset requires admin/power_user.
+      security: [{ SessionAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Subscription' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+
+  /subscriptions/{subscription_id}:
+    patch:
+      summary: Activate/deactivate a subscription or snooze it for a limited time
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: subscription_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                active: { type: boolean }
+                snoozed_until:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: "Set for a limited-time snooze, null to end it early."
+      responses:
+        '200': { description: Updated }
+    delete:
+      summary: Permanently delete a subscription
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: subscription_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+
+  # ---------- Channels ----------
+
+  /device-channels:
+    get:
+      summary: List all device recipients (channel instances without an associated user)
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChannelInstance' }
+    post:
+      summary: Create a new device recipient (admin)
+      security: [{ SessionAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChannelInstance' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChannelInstance' }
+
+  /device-channels/{channel_instance_id}:
+    delete:
+      summary: Remove a device recipient
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: channel_instance_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+
+  /channel-types:
+    get:
+      summary: List available channel types
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChannelType' }
+
+  /users/{user_id}/channels:
+    get:
+      summary: List a user's channel instances
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChannelInstance' }
+    post:
+      summary: Create a channel instance for a user
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChannelInstance' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChannelInstance' }
+
+  /users/{user_id}/channels/{channel_instance_id}:
+    patch:
+      summary: Update channel instance configuration
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+        - { name: channel_instance_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                config: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: Updated }
+    delete:
+      summary: Remove channel instance
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+        - { name: channel_instance_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+
+  /users/{user_id}/default-channels:
+    put:
+      summary: Fully set a user's default channel set
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_instance_ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200': { description: Updated }
+
+  /users/{user_id}/channel-rules:
+    get:
+      summary: List a user's additional channel rules
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserChannelRule' }
+    post:
+      summary: Create a new channel rule
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserChannelRule' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserChannelRule' }
+
+  /users/{user_id}/channel-rules/{rule_id}:
+    delete:
+      summary: Delete channel rule
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+        - { name: rule_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+
+  /users/{user_id}/escalation-order:
+    put:
+      summary: Set personal escalation order
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: user_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel_instance_ids_in_order:
+                  type: array
+                  items: { type: integer }
+      responses:
+        '200': { description: Updated }
+
+  # ---------- Notifications & delivery log ----------
+
+  /notifications-log:
+    get:
+      summary: View notification history (UI overview/log)
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: category_id, in: query, schema: { type: integer } }
+        - { name: task_id, in: query, schema: { type: integer } }
+        - { name: since, in: query, schema: { type: string, format: date-time } }
+        - name: q
+          in: query
+          schema: { type: string }
+          description: "Full-text search over title/message (simple LIKE filtering)."
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notification' }
+
+  /notifications-log/{notification_id}/recipients:
+    get:
+      summary: Delivery status of a notification per recipient incl. attempt history
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: notification_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/NotificationRecipientStatus' }
+
+  # ---------- API sources (admin) ----------
+
+  /api-sources:
+    get:
+      summary: List all registered sending systems
+      security: [{ SessionAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApiSource' }
+    post:
+      summary: Register a new sending system, an API key is generated
+      security: [{ SessionAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiSourceCreated' }
+
+  /api-sources/{source_id}:
+    delete:
+      summary: Block/delete a sending system (API key becomes invalid)
+      security: [{ SessionAuth: [] }]
+      parameters:
+        - { name: source_id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted/blocked }

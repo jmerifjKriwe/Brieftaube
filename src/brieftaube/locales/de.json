@@ -1,0 +1,7 @@
+{
+  "app.name": "Brieftaube",
+  "nav.language": "Sprache",
+  "index.welcome": "Willkommen bei Brieftaube",
+  "index.tagline": "Deine Nachrichten — zugestellt über den richtigen Kanal.",
+  "index.scaffold_note": "Die Oberfläche befindet sich im Aufbau. Der Dienst-Status ist unter /healthz verfügbar."
+}

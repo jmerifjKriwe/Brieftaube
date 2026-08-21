@@ -1,0 +1,15 @@
+.git
+.github
+.vscode
+.venv
+data
+docs
+tests
+playwright-report
+test-results
+htmlcov
+__pycache__
+*.pyc
+.env
+Dockerfile
+compose.yaml
